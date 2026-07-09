@@ -66,9 +66,9 @@
         </div>
       </section>
 
-      <!-- Loaded image display (no processing yet — Phase 0) -->
-      <section class="wrap viewer" id="viewer" aria-hidden="true" hidden>
-        <div class="viewer-head">
+      <!-- Working view — single-image compress core loop -->
+      <section class="wrap app" id="app" aria-hidden="true" hidden>
+        <div class="app-head">
           <div class="file-meta">
             <div>
               <div class="name" id="v-name">—</div>
@@ -77,10 +77,47 @@
           </div>
           <button class="btn-ghost" type="button" id="back">← Choose another</button>
         </div>
-        <figure class="stage">
-          <img id="v-img" alt="" />
-        </figure>
-        <p class="fmt-note center">Displaying your image — compression arrives in the next build.</p>
+
+        <div class="work">
+          <div class="compare" id="cmp" role="group" aria-label="Before and after comparison">
+            <img class="before" id="img-before" alt="Original" />
+            <img class="after" id="img-after" alt="Optimized" />
+            <div class="divider" aria-hidden="true"></div>
+            <button class="handle" id="handle" type="button" role="slider"
+                    aria-label="Comparison position" aria-valuemin="0" aria-valuemax="100" aria-valuenow="52">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l-4 6 4 6M15 6l4 6-4 6"/></svg>
+            </button>
+            <span class="lab l">Original</span>
+            <span class="lab r">Optimized</span>
+          </div>
+
+          <aside class="panel" aria-label="Controls">
+            <div class="sec">
+              <div class="slider-row"><h3>Quality</h3><span class="val mono" id="qval">75</span></div>
+              <input type="range" id="quality" min="1" max="100" value="75" aria-label="Quality" />
+              <div class="scale-lab"><span>smaller file</span><span>higher fidelity</span></div>
+              <p class="fmt-note" style="margin-top:14px">Output: <span class="mono">JPEG</span> — more formats next phase</p>
+            </div>
+            <div class="readout">
+              <div class="flow">
+                <span class="from mono" id="r-from">—</span>
+                <span class="arrow" aria-hidden="true">→</span>
+                <span class="to mono" id="r-to" aria-live="polite">—</span>
+              </div>
+              <div class="savings muted" id="r-sav">—</div>
+              <div class="bar" id="bar" hidden><span></span></div>
+              <button class="btn-download" type="button" id="dl" disabled>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0l-4-4m4 4l4-4"/><path d="M4 21h16"/></svg>
+                Download
+              </button>
+            </div>
+          </aside>
+        </div>
+
+        <div class="alert err" id="app-error" role="alert" hidden>
+          <svg class="ai" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M15 9l-6 6M9 9l6 6"/></svg>
+          <div><strong>Compression failed</strong><span id="app-error-msg"></span></div>
+        </div>
       </section>
     </main>
 
