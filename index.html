@@ -75,11 +75,16 @@
               <div class="dims mono" id="v-dims">—</div>
             </div>
           </div>
-          <button class="btn-ghost" type="button" id="back">← Choose another</button>
+          <div class="head-actions">
+            <button class="btn-ghost" type="button" id="add-more" hidden>＋ Add more</button>
+            <button class="btn-ghost" type="button" id="back-to-batch" hidden>← Back to batch</button>
+            <button class="btn-ghost" type="button" id="start-over">Start over</button>
+          </div>
         </div>
 
         <div class="work">
-          <div class="compare" id="cmp" role="group" aria-label="Before and after comparison">
+          <div class="left">
+          <div class="compare" id="cmp" role="group" aria-label="Before and after comparison" hidden>
             <img class="before" id="img-before" alt="Original" />
             <img class="after" id="img-after" alt="Optimized" />
             <div class="divider" aria-hidden="true"></div>
@@ -89,6 +94,8 @@
             </button>
             <span class="lab l">Original</span>
             <span class="lab r">Optimized</span>
+          </div>
+          <div class="list" id="list" hidden></div>
           </div>
 
           <aside class="panel" aria-label="Controls">
@@ -138,7 +145,7 @@
                 <span class="mono" id="fill-hex">#FFFFFF</span>
               </div>
             </div>
-            <div class="readout">
+            <div class="readout" id="detail-readout" hidden>
               <div class="flow">
                 <span class="from mono" id="r-from">—</span>
                 <span class="arrow" aria-hidden="true">→</span>
@@ -151,6 +158,19 @@
                 Download
               </button>
             </div>
+            <div class="readout" id="batch-summary" hidden>
+              <div class="flow">
+                <span class="from mono" id="sum-from">—</span>
+                <span class="arrow" aria-hidden="true">→</span>
+                <span class="to mono" id="sum-to" aria-live="polite">—</span>
+              </div>
+              <div class="savings muted" id="sum-save">—</div>
+              <button class="btn-download" type="button" id="dl-all" disabled>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0l-4-4m4 4l4-4"/><path d="M4 21h16"/></svg>
+                Download all (ZIP)
+              </button>
+              <p class="fmt-note" id="sum-note"></p>
+            </div>
           </aside>
         </div>
 
@@ -161,9 +181,9 @@
       </section>
     </main>
 
-    <footer class="wrap">squish · Phase 0 walking skeleton — pick an image, see it locally.</footer>
+    <footer class="wrap">squish · compress, convert &amp; resize — 100% in your browser.</footer>
 
-    <input type="file" id="file" accept="image/*" hidden />
+    <input type="file" id="file" accept="image/*" hidden multiple />
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
