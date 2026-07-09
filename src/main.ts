@@ -47,6 +47,13 @@ const bar = $('bar');
 const dl = $<HTMLButtonElement>('dl');
 const appError = $('app-error');
 const appErrorMsg = $('app-error-msg');
+const resizeAcc = $<HTMLDetailsElement>('resize-acc');
+const resizeState = $('resize-state');
+const rzW = $<HTMLInputElement>('rz-w'); // editable number (exact px)
+const rzH = $<HTMLInputElement>('rz-h'); // editable number (exact px)
+const rzP = $<HTMLInputElement>('rz-p'); // scale slider
+const rzPv = $('rz-p-v');
+const resizeOut = $('resize-out');
 
 const worker = new Worker(new URL('./worker.ts', import.meta.url), { type: 'module' });
 let jobId = 0;
@@ -54,6 +61,10 @@ let jobId = 0;
 // selection state (persists across files)
 let format: OutputFormat = 'webp';
 let fillColor = '#ffffff';
+
+let scale = 1; // resize scale (0 < scale ≤ 1); never upscales
+let originalW = 0;
+let originalH = 0;
 
 // per-file state
 let curFile: File | null = null;
@@ -110,6 +121,40 @@ function updateFormatUI(): void {
   updateFlattenUI();
 }
 
+/** Aspect-locked target dims from the resize scale. null = keep original (scale ≥ 1). */
+function computeTarget(): { tw: number; th: number } | null {
+  if (scale >= 1 || !originalW || !originalH) return null;
+  return {
+    tw: Math.max(1, Math.round(originalW * scale)),
+    th: Math.max(1, Math.round(originalH * scale)),
+  };
+}
+
+function updateResizeUI(): void {
+  const t = computeTarget();
+  if (!t) {
+    resizeState.textContent = 'Original';
+    resizeOut.textContent = originalW ? `No resize · ${originalW} × ${originalH}` : '—';
+  } else {
+    resizeState.textContent = `${t.tw} × ${t.th}`;
+    resizeOut.textContent = `${originalW} × ${originalH} → ${t.tw} × ${t.th}`;
+  }
+}
+
+/** Set the scale (clamped so it never upscales) and sync all three sliders + labels. */
+function syncFromScale(s: number): void {
+  const minScale = 1 / Math.max(originalW, originalH, 1);
+  scale = Math.min(1, Math.max(minScale, s));
+  const tw = Math.max(1, Math.round(originalW * scale));
+  const th = Math.max(1, Math.round(originalH * scale));
+  const pct = Math.round(scale * 100);
+  rzW.value = String(tw);
+  rzH.value = String(th);
+  rzP.value = String(pct);
+  rzPv.textContent = `${pct}%`;
+  updateResizeUI();
+}
+
 function setFill(hex: string): void {
   fillColor = hex;
   fillHex.textContent = hex.toUpperCase();
@@ -155,6 +200,8 @@ async function encode(): Promise<void> {
   setBusy(true);
   try {
     const bytes = await curFile.arrayBuffer(); // fresh buffer each run (transfer detaches it)
+    const t = computeTarget();
+    const noResize = !t || (t.tw === originalW && t.th === originalH);
     const req: EncodeRequest = {
       id,
       bytes,
@@ -162,6 +209,8 @@ async function encode(): Promise<void> {
       format,
       quality: Number(qEl.value),
       fillColor,
+      targetWidth: noResize ? undefined : t.tw,
+      targetHeight: noResize ? undefined : t.th,
     };
     worker.postMessage(req, [bytes]);
   } catch (err) {
@@ -230,6 +279,12 @@ function openFile(file: File): void {
 
   imgBefore.onload = () => {
     cmp.style.setProperty('--ar', `${imgBefore.naturalWidth} / ${imgBefore.naturalHeight}`);
+    originalW = imgBefore.naturalWidth;
+    originalH = imgBefore.naturalHeight;
+    rzW.max = String(originalW);
+    rzH.max = String(originalH);
+    resizeAcc.open = false;
+    syncFromScale(1);
     imgAfter.src = originalUrl!; // placeholder until the first encode returns
     vName.textContent = file.name;
     vDims.textContent = `${imgBefore.naturalWidth} × ${imgBefore.naturalHeight} · ${formatBytes(file.size)}`;
@@ -258,6 +313,10 @@ function reset(): void {
   encodedBlob = null;
   curFile = null;
   lastHasAlpha = false;
+  scale = 1;
+  originalW = 0;
+  originalH = 0;
+  resizeAcc.open = false;
   imgBefore.removeAttribute('src');
   imgAfter.removeAttribute('src');
   app.hidden = true;
@@ -292,6 +351,21 @@ qEl.addEventListener('input', () => {
   qVal.textContent = qEl.value;
   scheduleEncode();
 });
+
+// slider drags live; the number fields commit on change (blur/Enter) so aspect-sync
+// doesn't rewrite the field mid-keystroke.
+rzP.addEventListener('input', () => {
+  syncFromScale(Number(rzP.value) / 100);
+  scheduleEncode();
+});
+function commitDim(el: HTMLInputElement, original: number): void {
+  const v = Number(el.value);
+  if (original && Number.isFinite(v) && v > 0) syncFromScale(v / original);
+  else syncFromScale(scale); // invalid entry → restore fields to current scale
+  void encode();
+}
+rzW.addEventListener('change', () => commitDim(rzW, originalW));
+rzH.addEventListener('change', () => commitDim(rzH, originalH));
 
 dl.addEventListener('click', () => {
   if (!encodedBlob || !encodedUrl || !curFile) return;
