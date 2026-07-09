@@ -1,11 +1,12 @@
 import './style.css';
-import { extFor, mimeFor, type OutputFormat } from './codecs';
+import { extFor, mimeFor, isLossy, isOpaqueFormat, type OutputFormat } from './codecs';
 import type { EncodeRequest, EncodeResponse } from './worker';
 
 /**
- * Phase 1 — single-image compress core loop.
- * Pick/drop an image → quality slider → encode in a Web Worker (jSquash MozJPEG)
- * → before/after comparison + size-saved readout → download.
+ * Phases 1–2 — single-image compress + format conversion.
+ * Pick/drop → choose output format (JPEG/WebP/AVIF/PNG) + quality → encode in a
+ * Web Worker → before/after comparison + size-saved readout → download.
+ * Transparent source → opaque target (JPEG) flattens onto a chosen fill colour.
  */
 
 const $ = <T extends HTMLElement>(id: string): T => {
@@ -31,8 +32,14 @@ const cmp = $('cmp');
 const imgBefore = $<HTMLImageElement>('img-before');
 const imgAfter = $<HTMLImageElement>('img-after');
 const handle = $('handle');
+const fmts = $('fmts');
+const fmtNote = $('fmt-note');
+const qualitySec = $('quality-sec');
 const qEl = $<HTMLInputElement>('quality');
 const qVal = $('qval');
+const flattenSec = $('flatten-sec');
+const fillHex = $('fill-hex');
+const fillCustom = $<HTMLInputElement>('fill-custom');
 const rFrom = $('r-from');
 const rTo = $('r-to');
 const rSav = $('r-sav');
@@ -41,10 +48,12 @@ const dl = $<HTMLButtonElement>('dl');
 const appError = $('app-error');
 const appErrorMsg = $('app-error-msg');
 
-const OUTPUT: OutputFormat = 'jpeg';
-
 const worker = new Worker(new URL('./worker.ts', import.meta.url), { type: 'module' });
 let jobId = 0;
+
+// selection state (persists across files)
+let format: OutputFormat = 'webp';
+let fillColor = '#ffffff';
 
 // per-file state
 let curFile: File | null = null;
@@ -52,6 +61,7 @@ let originalUrl: string | null = null;
 let originalSize = 0;
 let encodedUrl: string | null = null;
 let encodedBlob: Blob | null = null;
+let lastHasAlpha = false;
 let debounceTimer: number | undefined;
 
 function formatBytes(bytes: number): string {
@@ -69,7 +79,7 @@ function setBusy(on: boolean): void {
   dl.disabled = on || !encodedBlob;
   if (on) {
     rSav.className = 'savings muted';
-    rSav.textContent = 'Encoding…';
+    rSav.textContent = `Encoding ${format.toUpperCase()}…`;
   }
 }
 
@@ -77,6 +87,36 @@ const showAppError = (msg: string) => {
   appErrorMsg.textContent = msg;
   appError.hidden = false;
 };
+
+/* ---- format / fill UI ---- */
+function updateFlattenUI(): void {
+  flattenSec.hidden = !(lastHasAlpha && isOpaqueFormat[format]);
+}
+
+function updateFormatUI(): void {
+  for (const chip of fmts.querySelectorAll<HTMLButtonElement>('.chip')) {
+    chip.setAttribute('aria-pressed', String(chip.dataset.fmt === format));
+  }
+  qualitySec.classList.toggle('disabled', !isLossy[format]);
+  if (format === 'avif') {
+    fmtNote.textContent = 'AVIF encodes slower — especially on mobile.';
+    fmtNote.hidden = false;
+  } else if (format === 'png') {
+    fmtNote.textContent = 'PNG is lossless — quality doesn’t apply.';
+    fmtNote.hidden = false;
+  } else {
+    fmtNote.hidden = true;
+  }
+  updateFlattenUI();
+}
+
+function setFill(hex: string): void {
+  fillColor = hex;
+  fillHex.textContent = hex.toUpperCase();
+  for (const sw of flattenSec.querySelectorAll<HTMLButtonElement>('.swatch')) {
+    sw.setAttribute('aria-pressed', String(sw.dataset.fill?.toLowerCase() === hex.toLowerCase()));
+  }
+}
 
 /* ---- worker results ---- */
 worker.onmessage = (e: MessageEvent<EncodeResponse>) => {
@@ -88,9 +128,11 @@ worker.onmessage = (e: MessageEvent<EncodeResponse>) => {
     return;
   }
   appError.hidden = true;
+  lastHasAlpha = r.hasAlpha;
+  updateFlattenUI();
 
   revoke(encodedUrl);
-  encodedBlob = new Blob([r.bytes], { type: mimeFor[OUTPUT] });
+  encodedBlob = new Blob([r.bytes], { type: mimeFor[format] });
   encodedUrl = URL.createObjectURL(encodedBlob);
   imgAfter.src = encodedUrl;
 
@@ -113,7 +155,14 @@ async function encode(): Promise<void> {
   setBusy(true);
   try {
     const bytes = await curFile.arrayBuffer(); // fresh buffer each run (transfer detaches it)
-    const req: EncodeRequest = { id, bytes, type: curFile.type, format: OUTPUT, quality: Number(qEl.value) };
+    const req: EncodeRequest = {
+      id,
+      bytes,
+      type: curFile.type,
+      format,
+      quality: Number(qEl.value),
+      fillColor,
+    };
     worker.postMessage(req, [bytes]);
   } catch (err) {
     setBusy(false);
@@ -170,8 +219,10 @@ function openFile(file: File): void {
 
   curFile = file;
   originalSize = file.size;
+  lastHasAlpha = false;
   revoke(originalUrl);
   revoke(encodedUrl);
+  originalUrl = null;
   encodedUrl = null;
   encodedBlob = null;
   originalUrl = URL.createObjectURL(file);
@@ -185,6 +236,7 @@ function openFile(file: File): void {
     rFrom.textContent = formatBytes(originalSize);
     rTo.textContent = '—';
     setSplit(52);
+    updateFormatUI();
     hero.hidden = true;
     app.hidden = false;
     app.setAttribute('aria-hidden', 'false');
@@ -205,6 +257,7 @@ function reset(): void {
   encodedUrl = null;
   encodedBlob = null;
   curFile = null;
+  lastHasAlpha = false;
   imgBefore.removeAttribute('src');
   imgAfter.removeAttribute('src');
   app.hidden = true;
@@ -215,22 +268,40 @@ function reset(): void {
   window.scrollTo({ top: 0, behavior: reduceMotion() ? 'auto' : 'smooth' });
 }
 
-/* ---- download ---- */
+/* ---- controls ---- */
+fmts.addEventListener('click', (e) => {
+  const btn = (e.target as HTMLElement).closest<HTMLButtonElement>('.chip');
+  if (!btn || !btn.dataset.fmt) return;
+  format = btn.dataset.fmt as OutputFormat;
+  updateFormatUI();
+  void encode();
+});
+
+flattenSec.addEventListener('click', (e) => {
+  const sw = (e.target as HTMLElement).closest<HTMLButtonElement>('.swatch');
+  if (!sw || !sw.dataset.fill) return;
+  setFill(sw.dataset.fill);
+  void encode();
+});
+fillCustom.addEventListener('input', () => {
+  setFill(fillCustom.value);
+  scheduleEncode();
+});
+
+qEl.addEventListener('input', () => {
+  qVal.textContent = qEl.value;
+  scheduleEncode();
+});
+
 dl.addEventListener('click', () => {
   if (!encodedBlob || !encodedUrl || !curFile) return;
   const base = curFile.name.replace(/\.[^.]+$/, '');
   const a = document.createElement('a');
   a.href = encodedUrl;
-  a.download = `${base}.${extFor[OUTPUT]}`;
+  a.download = `${base}.${extFor[format]}`;
   document.body.appendChild(a);
   a.click();
   a.remove();
-});
-
-/* ---- quality ---- */
-qEl.addEventListener('input', () => {
-  qVal.textContent = qEl.value;
-  scheduleEncode();
 });
 
 /* ---- file inputs ---- */
