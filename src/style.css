@@ -108,6 +108,9 @@ h1 { text-wrap:balance; margin:0; line-height:1.12; letter-spacing:-.02em; }
   background-size:22px 22px; mask-image:radial-gradient(circle at 50% 40%,#000 0%,transparent 78%); }
 .drop:hover, .drop.drag { border-color:var(--accent); transform:translateY(-3px);
   box-shadow:var(--shadow-lift); background:color-mix(in srgb,var(--surface) 92%,var(--accent-weak)); }
+.drop.err { border-color:var(--danger); border-style:solid;
+  background:color-mix(in srgb,var(--surface) 90%,var(--danger-weak)); cursor:not-allowed; }
+.drop.err .ic { background:var(--danger-weak); color:var(--danger); }
 .drop .ic { width:56px; height:56px; border-radius:16px; display:grid; place-items:center;
   background:var(--accent-weak); color:var(--accent); position:relative; z-index:1;
   transition:transform var(--dur-base) var(--ease); }

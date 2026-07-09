@@ -377,17 +377,41 @@ function updateRow(it: Item): void {
 }
 
 /* ---------- encode ---------- */
-function loadDims(it: Item): Promise<void> {
-  return new Promise((resolve) => {
-    const im = new Image();
-    im.onload = () => {
-      it.origW = im.naturalWidth;
-      it.origH = im.naturalHeight;
-      resolve();
-    };
-    im.onerror = () => resolve();
-    im.src = it.originalUrl;
-  });
+async function loadDims(it: Item): Promise<void> {
+  // Oriented dims (EXIF-corrected) so the resize fields / aspect match what we encode.
+  try {
+    const bm = await createImageBitmap(it.file, { imageOrientation: 'from-image' });
+    it.origW = bm.width;
+    it.origH = bm.height;
+    bm.close();
+  } catch {
+    /* dims stay 0; a bad file will surface as an encode error */
+  }
+}
+
+const MAX_MEGAPIXELS = 256; // hard guard against browser-crashing inputs
+
+/** Cheap header sniff for animated GIF / WebP / APNG. */
+async function isAnimated(file: File): Promise<boolean> {
+  try {
+    const buf = new Uint8Array(await file.slice(0, 4096).arrayBuffer());
+    let s = '';
+    for (let i = 0; i < buf.length; i++) s += String.fromCharCode(buf[i]);
+    if (s.startsWith('GIF8')) return s.includes('NETSCAPE2.0');
+    if (s.startsWith('RIFF') && s.slice(8, 12) === 'WEBP') return s.includes('ANIM');
+    if (buf[0] === 0x89 && s.slice(1, 4) === 'PNG') return s.includes('acTL');
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+function failItem(it: Item, message: string): void {
+  it.status = 'error';
+  it.error = message;
+  updateRow(it);
+  if (isActive(it)) renderDetail(it);
+  renderSummary();
 }
 
 async function encodeItem(it: Item): Promise<void> {
@@ -457,17 +481,33 @@ function scheduleReencode(): void {
 }
 
 /* ---------- add / navigate / download ---------- */
-function addFiles(files: FileList | File[]): void {
-  const incoming = Array.from(files).filter((f) => f.type.startsWith('image/'));
-  if (!incoming.length) {
-    if (items.length === 0) {
-      errorMsg.textContent = `No readable images there. Try JPEG, PNG, WebP, AVIF or GIF.`;
-      errorBox.hidden = false;
-    }
+function rejectDrop(message: string): void {
+  drop.classList.add('err');
+  errorMsg.textContent = message;
+  errorBox.hidden = false;
+}
+
+/** Screen incoming files (non-image types, animated) at the drop zone before admitting them. */
+async function intake(files: FileList | File[]): Promise<void> {
+  const images = Array.from(files).filter((f) => f.type.startsWith('image/'));
+  if (!images.length) {
+    rejectDrop(`That isn’t an image we can read. Try JPEG, PNG, WebP, AVIF or GIF.`);
     return;
   }
+  // Animation can only be detected once we can read bytes (i.e. now, on drop/pick — never on hover).
+  const animatedFlags = await Promise.all(images.map(isAnimated));
+  const accepted = images.filter((_, i) => !animatedFlags[i]);
+  if (!accepted.length) {
+    rejectDrop('Animated images aren’t supported yet.');
+    return;
+  }
+  drop.classList.remove('err');
   errorBox.hidden = true;
-  for (const file of incoming) {
+  addAccepted(accepted);
+}
+
+function addAccepted(images: File[]): void {
+  for (const file of images) {
     const it: Item = {
       id: ++idSeq,
       file,
@@ -482,7 +522,8 @@ function addFiles(files: FileList | File[]): void {
     };
     items.push(it);
     createRow(it);
-    void loadDims(it).then(() => {
+    void (async () => {
+      await loadDims(it);
       updateRow(it);
       if (isActive(it)) renderDetail(it);
       if (items[0] === it) {
@@ -490,8 +531,13 @@ function addFiles(files: FileList | File[]): void {
         originalH = it.origH;
         syncResizeFields();
       }
+      if (it.origW && it.origH && it.origW * it.origH > MAX_MEGAPIXELS * 1_000_000) {
+        const mp = Math.round((it.origW * it.origH) / 1_000_000);
+        failItem(it, `This image is very large (${mp} MP). Resize the original first, then try again.`);
+        return;
+      }
       void encodeItem(it);
-    });
+    })();
   }
   render();
 }
@@ -648,28 +694,37 @@ drop.addEventListener('keydown', (e) => {
   }
 });
 fileInput.addEventListener('change', () => {
-  if (fileInput.files && fileInput.files.length) addFiles(fileInput.files);
+  if (fileInput.files && fileInput.files.length) void intake(fileInput.files);
   fileInput.value = '';
 });
 addMore.addEventListener('click', () => fileInput.click());
 backToBatch.addEventListener('click', backToBatchView);
 startOverBtn.addEventListener('click', startOver);
 
+/** True only if the drag definitively carries a non-image file (type is known & not image/*). */
+function dragHasUnsupported(e: DragEvent): boolean {
+  const items = e.dataTransfer?.items;
+  if (!items) return false;
+  return Array.from(items).some((i) => i.kind === 'file' && i.type !== '' && !i.type.startsWith('image/'));
+}
 (['dragenter', 'dragover'] as const).forEach((ev) =>
   drop.addEventListener(ev, (e) => {
     e.preventDefault();
-    drop.classList.add('drag');
+    const bad = dragHasUnsupported(e);
+    if (e.dataTransfer) e.dataTransfer.dropEffect = bad ? 'none' : 'copy';
+    drop.classList.toggle('err', bad);
+    drop.classList.toggle('drag', !bad);
   }),
 );
-(['dragleave', 'drop'] as const).forEach((ev) =>
-  drop.addEventListener(ev, (e) => {
-    e.preventDefault();
-    drop.classList.remove('drag');
-    if (ev === 'drop' && (e as DragEvent).dataTransfer?.files.length) {
-      addFiles((e as DragEvent).dataTransfer!.files);
-    }
-  }),
-);
+drop.addEventListener('dragleave', () => {
+  drop.classList.remove('drag', 'err');
+});
+drop.addEventListener('drop', (e) => {
+  e.preventDefault();
+  drop.classList.remove('drag');
+  const files = (e as DragEvent).dataTransfer?.files;
+  if (files && files.length) void intake(files); // intake sets/clears the error state
+});
 
 /* ---------- theme ---------- */
 $('theme').addEventListener('click', () => {

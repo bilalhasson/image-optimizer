@@ -60,7 +60,11 @@ async function prepare(
   targetWidth: number | undefined,
   targetHeight: number | undefined,
 ): Promise<Prepared> {
-  const bitmap = await createImageBitmap(new Blob([bytes], { type }));
+  // 'from-image' bakes EXIF orientation into the pixels; since we then strip all
+  // metadata on re-encode, this is the only way the output stays correctly oriented.
+  const bitmap = await createImageBitmap(new Blob([bytes], { type }), {
+    imageOrientation: 'from-image',
+  });
   // Resize stage: draw the source at the target size (high-quality downscale).
   const width = Math.max(1, Math.round(targetWidth ?? bitmap.width));
   const height = Math.max(1, Math.round(targetHeight ?? bitmap.height));
