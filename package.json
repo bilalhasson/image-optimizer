@@ -4,6 +4,10 @@
   "version": "0.0.0",
   "type": "module",
   "description": "Client-side image compressor & format converter — images never leave your device.",
+  "packageManager": "pnpm@10.25.0",
+  "engines": {
+    "node": ">=24"
+  },
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
@@ -13,5 +17,8 @@
   "devDependencies": {
     "typescript": "~5.6.3",
     "vite": "^7.0.0"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": ["esbuild"]
   }
 }

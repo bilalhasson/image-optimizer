@@ -24,11 +24,17 @@ means privacy by default, zero hosting cost to scale, and no upload/download rou
 
 ## Develop
 
+Uses **Node 24** (see `.nvmrc`) and **pnpm** (pinned via `packageManager` in `package.json`).
+With [Corepack](https://nodejs.org/api/corepack.html) enabled, the right pnpm is used
+automatically.
+
 ```bash
-npm install
-npm run dev        # local dev server
-npm run build      # typecheck (strict) + production build to dist/
-npm run preview    # serve the production build
+nvm use            # Node 24, per .nvmrc
+corepack enable    # activates the pinned pnpm
+pnpm install
+pnpm dev           # local dev server
+pnpm build         # typecheck (strict) + production build to dist/
+pnpm preview       # serve the production build
 ```
 
 ## Approach
