@@ -107,6 +107,24 @@
               <input type="range" id="quality" min="1" max="100" value="75" aria-label="Quality" />
               <div class="scale-lab"><span>smaller file</span><span>higher fidelity</span></div>
             </div>
+            <div class="sec" id="resize-sec">
+              <details class="acc" id="resize-acc">
+                <summary>
+                  <span class="h">Resize</span>
+                  <span class="acc-state mono" id="resize-state">Original</span>
+                </summary>
+                <div class="acc-body">
+                  <div class="range-row"><label for="rz-p">Scale</label><span class="val mono" id="rz-p-v">100%</span></div>
+                  <input type="range" id="rz-p" min="1" max="100" step="1" value="100" aria-label="Scale percent" />
+                  <div class="dims-row">
+                    <label class="dim"><span class="dl">Width</span><span class="field"><input type="number" id="rz-w" min="1" step="1" inputmode="numeric" /><span class="u">px</span></span></label>
+                    <span class="x" aria-hidden="true">×</span>
+                    <label class="dim"><span class="dl">Height</span><span class="field"><input type="number" id="rz-h" min="1" step="1" inputmode="numeric" /><span class="u">px</span></span></label>
+                  </div>
+                  <p class="fmt-note" id="resize-out">No resize</p>
+                </div>
+              </details>
+            </div>
             <div class="sec" id="flatten-sec" hidden>
               <div class="alert warn">
                 <svg class="ai" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M12 9v4m0 4h.01"/><path d="M10.3 3.9L2.4 18a2 2 0 0 0 1.7 3h15.8a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>
