@@ -7,6 +7,10 @@ settings:
 importers:
 
   .:
+    dependencies:
+      '@jsquash/jpeg':
+        specifier: ^1.6.0
+        version: 1.6.0
     devDependencies:
       typescript:
         specifier: ~5.6.3
@@ -172,6 +176,9 @@ packages:
     engines: {node: '>=18'}
     cpu: [x64]
     os: [win32]
+
+  '@jsquash/jpeg@1.6.0':
+    resolution: {integrity: sha512-zwN46Awh1VM6gXlIcALwb5WzqK5H2e6+Awcs1QP8AvS8ohsK/sbE4esvmH4jhlhW7+CgiUUww66vg0aTnlSIMA==}
 
   '@rollup/rollup-android-arm-eabi@4.62.2':
     resolution: {integrity: sha512-6o7ZLZK+BeenkZCFNDXqpbjw9bD6nuWonvS/lwQJp7NoVVxm6p3qE7qQ5jGuBjiFsgvqjD8mZAU5oWxTmbOeOg==}
@@ -473,6 +480,8 @@ snapshots:
 
   '@esbuild/win32-x64@0.28.1':
     optional: true
+
+  '@jsquash/jpeg@1.6.0': {}
 
   '@rollup/rollup-android-arm-eabi@4.62.2':
     optional: true

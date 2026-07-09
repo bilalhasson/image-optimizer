@@ -1,4 +1,5 @@
 import './style.css';
+import type { EncodeRequest, EncodeResponse } from './worker';
 
 /**
  * Phase 0 — walking skeleton.
@@ -23,6 +24,25 @@ const errorBox = $('error');
 const errorMsg = $('error-msg');
 
 let currentUrl: string | null = null;
+
+/* --- Phase 1 spike: prove the worker + WASM encode pipeline end-to-end --- */
+const worker = new Worker(new URL('./worker.ts', import.meta.url), { type: 'module' });
+let jobId = 0;
+
+worker.onmessage = (e: MessageEvent<EncodeResponse>) => {
+  const r = e.data;
+  if (r.ok) {
+    vDims.textContent += `  →  ${formatBytes(r.size)} as JPEG q75 (${r.ms}ms)`;
+  } else {
+    showError(`Compression failed: ${r.error}`);
+  }
+};
+
+async function encodePreview(file: File): Promise<void> {
+  const bytes = await file.arrayBuffer();
+  const req: EncodeRequest = { id: ++jobId, bytes, type: file.type, format: 'jpeg', quality: 75 };
+  worker.postMessage(req, [bytes]);
+}
 
 /** Human-readable byte size using tabular-friendly units. */
 function formatBytes(bytes: number): string {
@@ -76,6 +96,7 @@ function handleFile(file: File): void {
       behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
       block: 'start',
     });
+    void encodePreview(file);
   };
 
   img.onerror = () => {
