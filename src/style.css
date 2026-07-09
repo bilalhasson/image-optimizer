@@ -84,10 +84,7 @@ h1 { text-wrap:balance; margin:0; line-height:1.12; letter-spacing:-.02em; }
 .top-in { display:flex; align-items:center; justify-content:space-between; height:60px; }
 .brand { display:flex; align-items:center; gap:var(--s3); font-weight:700; letter-spacing:-.03em;
   font-size:var(--t-20); color:var(--ink); text-decoration:none; }
-.brand .glyph { width:26px; height:26px; border-radius:7px; position:relative; flex:none;
-  background:linear-gradient(135deg,var(--accent),color-mix(in srgb,var(--accent) 55%,#7fe3b8)); box-shadow:var(--shadow-1); }
-.brand .glyph::after { content:""; position:absolute; inset:6px; border-radius:3px;
-  background:repeating-linear-gradient(90deg,color-mix(in srgb,var(--on-accent) 85%,transparent) 0 2px,transparent 2px 4px); opacity:.6; }
+.brand .glyph { width:26px; height:26px; flex:none; display:block; }
 .icon-btn { font:inherit; font-size:var(--t-13); cursor:pointer; color:var(--ink-muted);
   background:transparent; border:1px solid var(--border); border-radius:var(--r-pill);
   padding:6px 12px; display:inline-flex; align-items:center; gap:6px;
