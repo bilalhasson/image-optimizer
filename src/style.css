@@ -76,7 +76,7 @@ h1 { text-wrap:balance; margin:0; line-height:1.12; letter-spacing:-.02em; }
 .eyebrow { font-family:var(--font-mono); font-size:var(--t-12); letter-spacing:.14em; text-transform:uppercase; color:var(--ink-faint); margin:0; }
 :focus-visible { outline:none; box-shadow:var(--focus); border-radius:var(--r-sm); }
 
-.wrap { max-width:1080px; margin:0 auto; width:100%; padding:0 var(--s5); }
+.wrap { max-width:1080px; margin:0 auto; width:100%; padding-inline:var(--s5); }
 
 /* header */
 .top { position:sticky; top:0; z-index:20; backdrop-filter:saturate(1.4) blur(10px);
@@ -95,7 +95,7 @@ h1 { text-wrap:balance; margin:0; line-height:1.12; letter-spacing:-.02em; }
 .icon-btn:hover { border-color:var(--border-strong); color:var(--ink); }
 
 /* hero */
-.hero { padding:var(--s8) 0 var(--s6); text-align:center; }
+.hero { padding-block:var(--s8) var(--s6); text-align:center; }
 .hero h1 { font-size:clamp(2rem,5vw,var(--t-44)); font-weight:750; }
 .hero h1 .accent { color:var(--accent); }
 .hero .lead { max-width:52ch; margin:var(--s4) auto 0; color:var(--ink-muted); font-size:var(--t-20); }
@@ -140,7 +140,7 @@ h1 { text-wrap:balance; margin:0; line-height:1.12; letter-spacing:-.02em; }
 .alert strong { display:block; margin-bottom:2px; }
 
 /* viewer */
-.viewer { padding:var(--s6) 0 var(--s8); }
+.viewer { padding-block:var(--s6) var(--s8); }
 .viewer-head { display:flex; align-items:center; justify-content:space-between; gap:var(--s4);
   flex-wrap:wrap; margin-bottom:var(--s5); }
 .file-meta .name { font-weight:600; word-break:break-all; }
@@ -153,10 +153,10 @@ h1 { text-wrap:balance; margin:0; line-height:1.12; letter-spacing:-.02em; }
   box-shadow:var(--shadow-2); overflow:hidden; display:grid; place-items:center; min-height:200px; }
 .stage img { display:block; max-width:100%; max-height:70vh; }
 
-footer { padding:var(--s6) 0 var(--s7); color:var(--ink-faint); font-size:var(--t-13); text-align:center; }
+footer { padding-block:var(--s6) var(--s7); color:var(--ink-faint); font-size:var(--t-13); text-align:center; }
 
 @media (max-width:600px) {
-  .hero { padding:var(--s7) 0 var(--s5); }
+  .hero { padding-block:var(--s7) var(--s5); }
   .drop { padding:var(--s6) var(--s5); }
 }
 @media (prefers-reduced-motion: reduce) {
