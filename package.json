@@ -1,0 +1,17 @@
+{
+  "name": "squish",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "Client-side image compressor & format converter — images never leave your device.",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "~5.6.3",
+    "vite": "^7.0.0"
+  }
+}

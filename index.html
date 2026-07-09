@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en" data-theme="">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Compress and convert images entirely in your browser. Images never leave your device." />
+    <title>squish — compress images, privately</title>
+  </head>
+  <body>
+    <header class="top">
+      <div class="wrap top-in">
+        <a class="brand" href="/">
+          <span class="glyph" aria-hidden="true"></span>
+          squish
+        </a>
+        <button class="icon-btn" id="theme" type="button" aria-label="Toggle colour theme">
+          <span id="theme-ic" aria-hidden="true">◐</span> Theme
+        </button>
+      </div>
+    </header>
+
+    <main>
+      <!-- Landing / empty -->
+      <section class="wrap hero" id="hero">
+        <p class="eyebrow">Compress · Convert · Resize — in your browser</p>
+        <h1>Make images <span class="accent">lighter</span>,<br />without giving them away.</h1>
+        <p class="lead">Drop an image to get started. Everything runs locally — no uploads, no accounts.</p>
+
+        <div class="drop" id="drop" tabindex="0" role="button"
+             aria-label="Add an image — drop a file here or press Enter to browse">
+          <span class="ic" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4m0 0L8 8m4-4l4 4"/><path d="M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>
+          </span>
+          <span class="big">Drop an image here</span>
+          <span class="sub">or</span>
+          <button class="btn-pick" type="button" id="pick">Browse files</button>
+          <span class="fmt-note">Accepts <span class="mono">JPEG · PNG · WebP · AVIF · GIF</span></span>
+        </div>
+
+        <div class="privacy"><span class="dot" aria-hidden="true"></span> Images never leave your device — every pixel is processed locally.</div>
+
+        <div class="alert err" id="error" role="alert" hidden>
+          <svg class="ai" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M15 9l-6 6M9 9l6 6"/></svg>
+          <div><strong id="error-title">That file didn't work</strong><span id="error-msg"></span></div>
+        </div>
+      </section>
+
+      <!-- Loaded image display (no processing yet — Phase 0) -->
+      <section class="wrap viewer" id="viewer" aria-hidden="true" hidden>
+        <div class="viewer-head">
+          <div class="file-meta">
+            <div>
+              <div class="name" id="v-name">—</div>
+              <div class="dims mono" id="v-dims">—</div>
+            </div>
+          </div>
+          <button class="btn-ghost" type="button" id="back">← Choose another</button>
+        </div>
+        <figure class="stage">
+          <img id="v-img" alt="" />
+        </figure>
+        <p class="fmt-note center">Displaying your image — compression arrives in the next build.</p>
+      </section>
+    </main>
+
+    <footer class="wrap">squish · Phase 0 walking skeleton — pick an image, see it locally.</footer>
+
+    <input type="file" id="file" accept="image/*" hidden />
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
