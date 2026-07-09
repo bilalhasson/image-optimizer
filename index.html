@@ -93,10 +93,32 @@
 
           <aside class="panel" aria-label="Controls">
             <div class="sec">
+              <h3>Output format</h3>
+              <div class="chips" id="fmts">
+                <button class="chip" type="button" data-fmt="jpeg" aria-pressed="false">JPEG</button>
+                <button class="chip" type="button" data-fmt="webp" aria-pressed="true">WebP</button>
+                <button class="chip" type="button" data-fmt="avif" aria-pressed="false">AVIF</button>
+                <button class="chip" type="button" data-fmt="png" aria-pressed="false">PNG</button>
+              </div>
+              <p class="fmt-note" id="fmt-note" hidden></p>
+            </div>
+            <div class="sec" id="quality-sec">
               <div class="slider-row"><h3>Quality</h3><span class="val mono" id="qval">75</span></div>
               <input type="range" id="quality" min="1" max="100" value="75" aria-label="Quality" />
               <div class="scale-lab"><span>smaller file</span><span>higher fidelity</span></div>
-              <p class="fmt-note" style="margin-top:14px">Output: <span class="mono">JPEG</span> — more formats next phase</p>
+            </div>
+            <div class="sec" id="flatten-sec" hidden>
+              <div class="alert warn">
+                <svg class="ai" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M12 9v4m0 4h.01"/><path d="M10.3 3.9L2.4 18a2 2 0 0 0 1.7 3h15.8a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>
+                <div><strong>This image has transparency</strong>JPEG can't keep it — transparent areas are filled.</div>
+              </div>
+              <div class="swatch-row">
+                Fill:
+                <button class="swatch" type="button" data-fill="#ffffff" style="background:#fff" aria-pressed="true" title="White"></button>
+                <button class="swatch" type="button" data-fill="#000000" style="background:#111" title="Black"></button>
+                <input type="color" id="fill-custom" value="#0f8a5f" aria-label="Custom fill colour" />
+                <span class="mono" id="fill-hex">#FFFFFF</span>
+              </div>
             </div>
             <div class="readout">
               <div class="flow">
