@@ -25,6 +25,7 @@ const fileInput = $<HTMLInputElement>('file');
 const drop = $('drop');
 const errorBox = $('error');
 const errorMsg = $('error-msg');
+const toastEl = $('toast');
 
 // app shell
 const app = $('app');
@@ -132,6 +133,13 @@ function fmtBytes(bytes: number): string {
   return `${bytes} B`;
 }
 const baseName = (name: string) => name.replace(/\.[^.]+$/, '');
+let toastTimer: number | undefined;
+function toast(message: string): void {
+  toastEl.textContent = message;
+  toastEl.hidden = false;
+  window.clearTimeout(toastTimer);
+  toastTimer = window.setTimeout(() => (toastEl.hidden = true), 3800);
+}
 const revoke = (u: string | undefined | null) => {
   if (u) URL.revokeObjectURL(u);
 };
@@ -550,7 +558,12 @@ function scheduleReencode(): void {
 }
 
 /* ---------- add / navigate / download ---------- */
+/** Reject at the landing drop zone if it's visible; otherwise (app open) show a toast. */
 function rejectDrop(message: string): void {
+  if (items.length > 0) {
+    toast(message);
+    return;
+  }
   drop.classList.add('err');
   errorMsg.textContent = message;
   errorBox.hidden = false;
@@ -561,19 +574,24 @@ async function intake(files: FileList | File[]): Promise<void> {
   const arr = Array.from(files);
   const screened = await Promise.all(arr.map(async (f) => ({ f, heic: await isHeicFile(f) })));
   const usable = screened.filter((s) => s.f.type.startsWith('image/') || s.heic);
-  if (!usable.length) {
-    rejectDrop(`That isn’t an image we can read. Try JPEG, PNG, WebP, AVIF, GIF or HEIC.`);
-    return;
-  }
+  const unsupported = screened.length - usable.length;
   // Animation can only be detected once we can read bytes (i.e. now, on drop/pick — never on hover).
   const animatedFlags = await Promise.all(usable.map((s) => isAnimated(s.f)));
   const accepted = usable.filter((_, i) => !animatedFlags[i]);
+  const animatedCount = usable.length - accepted.length;
+
   if (!accepted.length) {
-    rejectDrop('Animated images aren’t supported yet.');
+    rejectDrop(
+      animatedCount && !unsupported
+        ? 'Animated images aren’t supported yet.'
+        : `That isn’t an image we can read. Try JPEG, PNG, WebP, AVIF, GIF or HEIC.`,
+    );
     return;
   }
   drop.classList.remove('err');
   errorBox.hidden = true;
+  const skipped = unsupported + animatedCount;
+  if (skipped) toast(`${skipped} file${skipped > 1 ? 's' : ''} skipped — unsupported or animated.`);
   addAccepted(accepted);
 }
 
