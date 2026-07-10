@@ -8,7 +8,7 @@
  * + OffscreenCanvas), flatten transparency onto a fill when the target format is
  * opaque (JPEG), then encode with a jSquash WASM codec.
  */
-import { getEncoder, isOpaqueFormat, type OutputFormat } from './codecs';
+import { getEncoder, isOpaqueFormat, isLossy, type OutputFormat } from './codecs';
 
 export interface EncodeRequest {
   id: number;
@@ -22,6 +22,8 @@ export interface EncodeRequest {
   /** Target output dimensions. Omit (or match source) for no resize. Aspect handled by caller. */
   targetWidth?: number;
   targetHeight?: number;
+  /** If set (lossy formats only), binary-search quality for the largest output ≤ this many bytes. */
+  targetBytes?: number;
 }
 
 export type EncodeResponse =
@@ -35,6 +37,10 @@ export type EncodeResponse =
       ms: number;
       /** Whether the source had any transparent pixels. */
       hasAlpha: boolean;
+      /** Quality actually used (the search result in target-size mode). */
+      quality: number;
+      /** In target-size mode: whether a quality fitting under the budget was found. */
+      reachedTarget?: boolean;
     }
   | { id: number; ok: false; error: string };
 
@@ -60,7 +66,11 @@ async function prepare(
   targetWidth: number | undefined,
   targetHeight: number | undefined,
 ): Promise<Prepared> {
-  const bitmap = await createImageBitmap(new Blob([bytes], { type }));
+  // 'from-image' bakes EXIF orientation into the pixels; since we then strip all
+  // metadata on re-encode, this is the only way the output stays correctly oriented.
+  const bitmap = await createImageBitmap(new Blob([bytes], { type }), {
+    imageOrientation: 'from-image',
+  });
   // Resize stage: draw the source at the target size (high-quality downscale).
   const width = Math.max(1, Math.round(targetWidth ?? bitmap.width));
   const height = Math.max(1, Math.round(targetHeight ?? bitmap.height));
@@ -90,7 +100,8 @@ async function prepare(
 }
 
 self.onmessage = async (e: MessageEvent<EncodeRequest>) => {
-  const { id, bytes, type, format, quality, fillColor, targetWidth, targetHeight } = e.data;
+  const { id, bytes, type, format, quality, fillColor, targetWidth, targetHeight, targetBytes } =
+    e.data;
   const started = performance.now();
   try {
     const { imageData, hasAlpha, width, height } = await prepare(
@@ -102,7 +113,41 @@ self.onmessage = async (e: MessageEvent<EncodeRequest>) => {
       targetHeight,
     );
     const encode = await getEncoder(format);
-    const out = await encode(imageData, { quality });
+
+    let out: ArrayBuffer;
+    let usedQuality = quality;
+    let reachedTarget: boolean | undefined;
+
+    if (targetBytes && isLossy[format]) {
+      // Decode happened once above; here we only re-encode at different qualities.
+      let lo = 1;
+      let hi = 100;
+      let best: ArrayBuffer | null = null;
+      let bestQ = 1;
+      while (lo <= hi) {
+        const mid = (lo + hi) >> 1;
+        const buf = await encode(imageData, { quality: mid });
+        if (buf.byteLength <= targetBytes) {
+          best = buf;
+          bestQ = mid;
+          lo = mid + 1;
+        } else {
+          hi = mid - 1;
+        }
+      }
+      if (best) {
+        out = best;
+        usedQuality = bestQ;
+        reachedTarget = true;
+      } else {
+        out = await encode(imageData, { quality: 1 }); // smallest we can do
+        usedQuality = 1;
+        reachedTarget = false;
+      }
+    } else {
+      out = await encode(imageData, { quality });
+    }
+
     const res: EncodeResponse = {
       id,
       ok: true,
@@ -112,6 +157,8 @@ self.onmessage = async (e: MessageEvent<EncodeRequest>) => {
       height,
       ms: Math.round(performance.now() - started),
       hasAlpha,
+      quality: usedQuality,
+      reachedTarget,
     };
     self.postMessage(res, { transfer: [out] });
   } catch (err) {

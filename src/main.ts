@@ -63,6 +63,11 @@ const fmtNote = $('fmt-note');
 const qualitySec = $('quality-sec');
 const qEl = $<HTMLInputElement>('quality');
 const qVal = $('qval');
+const qMode = $('q-mode');
+const qualityBlock = $('quality-block');
+const targetBlock = $('target-block');
+const targetKb = $<HTMLInputElement>('target-kb');
+const targetVal = $('target-val');
 const flattenSec = $('flatten-sec');
 const fillHex = $('fill-hex');
 const fillCustom = $<HTMLInputElement>('fill-custom');
@@ -95,6 +100,8 @@ interface Item {
   encoded?: Blob;
   encodedUrl?: string;
   encodedSize?: number;
+  encQuality?: number;
+  reached?: boolean; // target-size mode: did we fit under the budget?
   outName?: string;
   error?: string;
   jobId: number;
@@ -109,9 +116,11 @@ let jobSeq = 0;
 // global settings
 let format: OutputFormat = 'webp';
 let fillColor = '#ffffff';
+let qmode: 'quality' | 'target' = 'quality';
 let scale = 1; // resize (0 < scale ≤ 1); never upscales
 let originalW = 0; // reference dims for the resize fields (active or first item)
 let originalH = 0;
+let refBytes = 0; // reference original size, drives the target-size slider max
 
 const pool = new EncodePool();
 let reencodeTimer: number | undefined;
@@ -159,7 +168,27 @@ function updateFormatUI(): void {
   } else {
     fmtNote.hidden = true;
   }
+  updateQualityModeUI();
   updateFlattenUI();
+}
+function updateQualityModeUI(): void {
+  for (const chip of qMode.querySelectorAll<HTMLButtonElement>('.chip')) {
+    chip.setAttribute('aria-pressed', String(chip.dataset.qmode === qmode));
+  }
+  qualityBlock.hidden = qmode !== 'quality';
+  targetBlock.hidden = qmode !== 'target';
+}
+const targeting = () => qmode === 'target' && isLossy[format];
+const targetLabel = () => fmtBytes(Number(targetKb.value) * 1024);
+
+/** Target slider range maxes at the reference image's original size; keeps the value in range. */
+function syncTargetUI(): void {
+  const maxKB = Math.max(10, Math.ceil(refBytes / 1024) || 1000);
+  targetKb.max = String(maxKB);
+  let v = Number(targetKb.value) || 0;
+  v = Math.min(maxKB, Math.max(5, v || Math.round(maxKB / 2)));
+  targetKb.value = String(v);
+  targetVal.textContent = fmtBytes(v * 1024);
 }
 function setFill(hex: string): void {
   fillColor = hex;
@@ -208,7 +237,9 @@ function render(): void {
   const ref = d ?? items[0];
   originalW = ref?.origW ?? 0;
   originalH = ref?.origH ?? 0;
+  refBytes = ref?.origSize ?? 0;
   syncResizeFields();
+  syncTargetUI();
   updateFormatUI();
 
   if (d) {
@@ -232,7 +263,7 @@ function render(): void {
     vName.textContent = `${items.length} images`;
     vDims.textContent =
       `${format.toUpperCase()}` +
-      (isLossy[format] ? ` · q${qEl.value}` : '') +
+      (isLossy[format] ? (targeting() ? ` · ≤ ${targetLabel()}` : ` · q${qEl.value}`) : '') +
       (scale < 1 ? ` · ${Math.round(scale * 100)}%` : '');
     renderSummary();
   }
@@ -259,9 +290,12 @@ function renderDetail(it: Item): void {
   } else if (it.status === 'done' && it.encodedSize != null) {
     rTo.textContent = fmtBytes(it.encodedSize);
     const pct = Math.round((1 - it.encodedSize / it.origSize) * 100);
-    if (pct >= 0) {
+    if (targeting() && it.reached === false) {
+      rSav.className = 'savings neg';
+      rSav.textContent = `can’t reach ${targetLabel()} — smallest is ${fmtBytes(it.encodedSize)}`;
+    } else if (pct >= 0) {
       rSav.className = 'savings';
-      rSav.textContent = `↓ ${pct}% smaller`;
+      rSav.textContent = targeting() ? `↓ ${pct}% · q${it.encQuality}` : `↓ ${pct}% smaller`;
     } else {
       rSav.className = 'savings neg';
       rSav.textContent = `↑ ${Math.abs(pct)}% larger — keep original`;
@@ -368,26 +402,54 @@ function updateRow(it: Item): void {
     const to = it.encodedSize ?? 0;
     row.fmeta.textContent = `${it.origW} × ${it.origH} · ${fmtBytes(from)} → ${fmtBytes(to)} · ${format.toUpperCase()}`;
     const pct = Math.round((1 - to / from) * 100);
-    row.status.innerHTML =
-      pct >= 0
-        ? `<span class="pill done mono">↓ ${pct}%</span>`
-        : `<span class="pill warn mono">larger · kept</span>`;
+    if (targeting() && it.reached === false) {
+      row.status.innerHTML = `<span class="pill warn mono">over ${targetLabel()}</span>`;
+    } else {
+      row.status.innerHTML =
+        pct >= 0
+          ? `<span class="pill done mono">↓ ${pct}%</span>`
+          : `<span class="pill warn mono">larger · kept</span>`;
+    }
     row.dl.hidden = false;
   }
 }
 
 /* ---------- encode ---------- */
-function loadDims(it: Item): Promise<void> {
-  return new Promise((resolve) => {
-    const im = new Image();
-    im.onload = () => {
-      it.origW = im.naturalWidth;
-      it.origH = im.naturalHeight;
-      resolve();
-    };
-    im.onerror = () => resolve();
-    im.src = it.originalUrl;
-  });
+async function loadDims(it: Item): Promise<void> {
+  // Oriented dims (EXIF-corrected) so the resize fields / aspect match what we encode.
+  try {
+    const bm = await createImageBitmap(it.file, { imageOrientation: 'from-image' });
+    it.origW = bm.width;
+    it.origH = bm.height;
+    bm.close();
+  } catch {
+    /* dims stay 0; a bad file will surface as an encode error */
+  }
+}
+
+const MAX_MEGAPIXELS = 256; // hard guard against browser-crashing inputs
+
+/** Cheap header sniff for animated GIF / WebP / APNG. */
+async function isAnimated(file: File): Promise<boolean> {
+  try {
+    const buf = new Uint8Array(await file.slice(0, 4096).arrayBuffer());
+    let s = '';
+    for (let i = 0; i < buf.length; i++) s += String.fromCharCode(buf[i]);
+    if (s.startsWith('GIF8')) return s.includes('NETSCAPE2.0');
+    if (s.startsWith('RIFF') && s.slice(8, 12) === 'WEBP') return s.includes('ANIM');
+    if (buf[0] === 0x89 && s.slice(1, 4) === 'PNG') return s.includes('acTL');
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+function failItem(it: Item, message: string): void {
+  it.status = 'error';
+  it.error = message;
+  updateRow(it);
+  if (isActive(it)) renderDetail(it);
+  renderSummary();
 }
 
 async function encodeItem(it: Item): Promise<void> {
@@ -420,6 +482,7 @@ async function encodeItem(it: Item): Promise<void> {
     fillColor,
     targetWidth: t?.tw,
     targetHeight: t?.th,
+    targetBytes: targeting() ? Math.max(1, Math.round(Number(targetKb.value) || 0)) * 1024 : undefined,
   };
   const res = await pool.submit(req, () => {
     if (it.jobId === my) {
@@ -438,9 +501,17 @@ async function encodeItem(it: Item): Promise<void> {
     it.encoded = new Blob([res.bytes], { type: mimeFor[format] });
     it.encodedUrl = URL.createObjectURL(it.encoded);
     it.encodedSize = res.size;
+    it.encQuality = res.quality;
+    it.reached = res.reachedTarget;
     it.hasAlpha = res.hasAlpha;
     it.status = 'done';
     it.outName = `${baseName(it.name)}.${extFor[format]}`;
+    // In target-size mode, reflect the quality the search landed on back into the slider,
+    // so switching to Quality mode continues from there (detail view only — batch is ambiguous).
+    if (targeting() && isActive(it)) {
+      qEl.value = String(res.quality);
+      qVal.textContent = String(res.quality);
+    }
   }
   updateRow(it);
   if (isActive(it)) renderDetail(it);
@@ -457,17 +528,33 @@ function scheduleReencode(): void {
 }
 
 /* ---------- add / navigate / download ---------- */
-function addFiles(files: FileList | File[]): void {
-  const incoming = Array.from(files).filter((f) => f.type.startsWith('image/'));
-  if (!incoming.length) {
-    if (items.length === 0) {
-      errorMsg.textContent = `No readable images there. Try JPEG, PNG, WebP, AVIF or GIF.`;
-      errorBox.hidden = false;
-    }
+function rejectDrop(message: string): void {
+  drop.classList.add('err');
+  errorMsg.textContent = message;
+  errorBox.hidden = false;
+}
+
+/** Screen incoming files (non-image types, animated) at the drop zone before admitting them. */
+async function intake(files: FileList | File[]): Promise<void> {
+  const images = Array.from(files).filter((f) => f.type.startsWith('image/'));
+  if (!images.length) {
+    rejectDrop(`That isn’t an image we can read. Try JPEG, PNG, WebP, AVIF or GIF.`);
     return;
   }
+  // Animation can only be detected once we can read bytes (i.e. now, on drop/pick — never on hover).
+  const animatedFlags = await Promise.all(images.map(isAnimated));
+  const accepted = images.filter((_, i) => !animatedFlags[i]);
+  if (!accepted.length) {
+    rejectDrop('Animated images aren’t supported yet.');
+    return;
+  }
+  drop.classList.remove('err');
   errorBox.hidden = true;
-  for (const file of incoming) {
+  addAccepted(accepted);
+}
+
+function addAccepted(images: File[]): void {
+  for (const file of images) {
     const it: Item = {
       id: ++idSeq,
       file,
@@ -482,7 +569,8 @@ function addFiles(files: FileList | File[]): void {
     };
     items.push(it);
     createRow(it);
-    void loadDims(it).then(() => {
+    void (async () => {
+      await loadDims(it);
       updateRow(it);
       if (isActive(it)) renderDetail(it);
       if (items[0] === it) {
@@ -490,8 +578,13 @@ function addFiles(files: FileList | File[]): void {
         originalH = it.origH;
         syncResizeFields();
       }
+      if (it.origW && it.origH && it.origW * it.origH > MAX_MEGAPIXELS * 1_000_000) {
+        const mp = Math.round((it.origW * it.origH) / 1_000_000);
+        failItem(it, `This image is very large (${mp} MP). Resize the original first, then try again.`);
+        return;
+      }
       void encodeItem(it);
-    });
+    })();
   }
   render();
 }
@@ -606,6 +699,18 @@ qEl.addEventListener('input', () => {
   qVal.textContent = qEl.value;
   scheduleReencode();
 });
+qMode.addEventListener('click', (e) => {
+  const btn = (e.target as HTMLElement).closest<HTMLButtonElement>('.chip');
+  if (!btn || !btn.dataset.qmode) return;
+  qmode = btn.dataset.qmode as 'quality' | 'target';
+  updateQualityModeUI();
+  render();
+  reencodeAll();
+});
+targetKb.addEventListener('input', () => {
+  syncTargetUI();
+  scheduleReencode();
+});
 rzP.addEventListener('input', () => {
   setScale(Number(rzP.value) / 100);
   scheduleReencode();
@@ -648,28 +753,37 @@ drop.addEventListener('keydown', (e) => {
   }
 });
 fileInput.addEventListener('change', () => {
-  if (fileInput.files && fileInput.files.length) addFiles(fileInput.files);
+  if (fileInput.files && fileInput.files.length) void intake(fileInput.files);
   fileInput.value = '';
 });
 addMore.addEventListener('click', () => fileInput.click());
 backToBatch.addEventListener('click', backToBatchView);
 startOverBtn.addEventListener('click', startOver);
 
+/** True only if the drag definitively carries a non-image file (type is known & not image/*). */
+function dragHasUnsupported(e: DragEvent): boolean {
+  const items = e.dataTransfer?.items;
+  if (!items) return false;
+  return Array.from(items).some((i) => i.kind === 'file' && i.type !== '' && !i.type.startsWith('image/'));
+}
 (['dragenter', 'dragover'] as const).forEach((ev) =>
   drop.addEventListener(ev, (e) => {
     e.preventDefault();
-    drop.classList.add('drag');
+    const bad = dragHasUnsupported(e);
+    if (e.dataTransfer) e.dataTransfer.dropEffect = bad ? 'none' : 'copy';
+    drop.classList.toggle('err', bad);
+    drop.classList.toggle('drag', !bad);
   }),
 );
-(['dragleave', 'drop'] as const).forEach((ev) =>
-  drop.addEventListener(ev, (e) => {
-    e.preventDefault();
-    drop.classList.remove('drag');
-    if (ev === 'drop' && (e as DragEvent).dataTransfer?.files.length) {
-      addFiles((e as DragEvent).dataTransfer!.files);
-    }
-  }),
-);
+drop.addEventListener('dragleave', () => {
+  drop.classList.remove('drag', 'err');
+});
+drop.addEventListener('drop', (e) => {
+  e.preventDefault();
+  drop.classList.remove('drag');
+  const files = (e as DragEvent).dataTransfer?.files;
+  if (files && files.length) void intake(files); // intake sets/clears the error state
+});
 
 /* ---------- theme ---------- */
 $('theme').addEventListener('click', () => {
