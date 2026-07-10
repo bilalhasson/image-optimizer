@@ -10,6 +10,6 @@ export default defineConfig({
     // jSquash loads its own WASM relative to the package. Vite's dev dep-optimizer
     // rewrites those paths and the .wasm fetch 404s → SPA fallback returns index.html
     // → "WebAssembly.Module doesn't start with '\0asm'". Excluding keeps dev working.
-    exclude: ['@jsquash/jpeg', '@jsquash/png', '@jsquash/webp', '@jsquash/avif'],
+    exclude: ['@jsquash/jpeg', '@jsquash/png', '@jsquash/webp', '@jsquash/avif', 'heic-to'],
   },
 });
