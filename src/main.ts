@@ -63,6 +63,11 @@ const fmtNote = $('fmt-note');
 const qualitySec = $('quality-sec');
 const qEl = $<HTMLInputElement>('quality');
 const qVal = $('qval');
+const qMode = $('q-mode');
+const qualityBlock = $('quality-block');
+const targetBlock = $('target-block');
+const targetKb = $<HTMLInputElement>('target-kb');
+const targetVal = $('target-val');
 const flattenSec = $('flatten-sec');
 const fillHex = $('fill-hex');
 const fillCustom = $<HTMLInputElement>('fill-custom');
@@ -95,6 +100,8 @@ interface Item {
   encoded?: Blob;
   encodedUrl?: string;
   encodedSize?: number;
+  encQuality?: number;
+  reached?: boolean; // target-size mode: did we fit under the budget?
   outName?: string;
   error?: string;
   jobId: number;
@@ -109,9 +116,11 @@ let jobSeq = 0;
 // global settings
 let format: OutputFormat = 'webp';
 let fillColor = '#ffffff';
+let qmode: 'quality' | 'target' = 'quality';
 let scale = 1; // resize (0 < scale ≤ 1); never upscales
 let originalW = 0; // reference dims for the resize fields (active or first item)
 let originalH = 0;
+let refBytes = 0; // reference original size, drives the target-size slider max
 
 const pool = new EncodePool();
 let reencodeTimer: number | undefined;
@@ -159,7 +168,27 @@ function updateFormatUI(): void {
   } else {
     fmtNote.hidden = true;
   }
+  updateQualityModeUI();
   updateFlattenUI();
+}
+function updateQualityModeUI(): void {
+  for (const chip of qMode.querySelectorAll<HTMLButtonElement>('.chip')) {
+    chip.setAttribute('aria-pressed', String(chip.dataset.qmode === qmode));
+  }
+  qualityBlock.hidden = qmode !== 'quality';
+  targetBlock.hidden = qmode !== 'target';
+}
+const targeting = () => qmode === 'target' && isLossy[format];
+const targetLabel = () => fmtBytes(Number(targetKb.value) * 1024);
+
+/** Target slider range maxes at the reference image's original size; keeps the value in range. */
+function syncTargetUI(): void {
+  const maxKB = Math.max(10, Math.ceil(refBytes / 1024) || 1000);
+  targetKb.max = String(maxKB);
+  let v = Number(targetKb.value) || 0;
+  v = Math.min(maxKB, Math.max(5, v || Math.round(maxKB / 2)));
+  targetKb.value = String(v);
+  targetVal.textContent = fmtBytes(v * 1024);
 }
 function setFill(hex: string): void {
   fillColor = hex;
@@ -208,7 +237,9 @@ function render(): void {
   const ref = d ?? items[0];
   originalW = ref?.origW ?? 0;
   originalH = ref?.origH ?? 0;
+  refBytes = ref?.origSize ?? 0;
   syncResizeFields();
+  syncTargetUI();
   updateFormatUI();
 
   if (d) {
@@ -232,7 +263,7 @@ function render(): void {
     vName.textContent = `${items.length} images`;
     vDims.textContent =
       `${format.toUpperCase()}` +
-      (isLossy[format] ? ` · q${qEl.value}` : '') +
+      (isLossy[format] ? (targeting() ? ` · ≤ ${targetLabel()}` : ` · q${qEl.value}`) : '') +
       (scale < 1 ? ` · ${Math.round(scale * 100)}%` : '');
     renderSummary();
   }
@@ -259,9 +290,12 @@ function renderDetail(it: Item): void {
   } else if (it.status === 'done' && it.encodedSize != null) {
     rTo.textContent = fmtBytes(it.encodedSize);
     const pct = Math.round((1 - it.encodedSize / it.origSize) * 100);
-    if (pct >= 0) {
+    if (targeting() && it.reached === false) {
+      rSav.className = 'savings neg';
+      rSav.textContent = `can’t reach ${targetLabel()} — smallest is ${fmtBytes(it.encodedSize)}`;
+    } else if (pct >= 0) {
       rSav.className = 'savings';
-      rSav.textContent = `↓ ${pct}% smaller`;
+      rSav.textContent = targeting() ? `↓ ${pct}% · q${it.encQuality}` : `↓ ${pct}% smaller`;
     } else {
       rSav.className = 'savings neg';
       rSav.textContent = `↑ ${Math.abs(pct)}% larger — keep original`;
@@ -368,10 +402,14 @@ function updateRow(it: Item): void {
     const to = it.encodedSize ?? 0;
     row.fmeta.textContent = `${it.origW} × ${it.origH} · ${fmtBytes(from)} → ${fmtBytes(to)} · ${format.toUpperCase()}`;
     const pct = Math.round((1 - to / from) * 100);
-    row.status.innerHTML =
-      pct >= 0
-        ? `<span class="pill done mono">↓ ${pct}%</span>`
-        : `<span class="pill warn mono">larger · kept</span>`;
+    if (targeting() && it.reached === false) {
+      row.status.innerHTML = `<span class="pill warn mono">over ${targetLabel()}</span>`;
+    } else {
+      row.status.innerHTML =
+        pct >= 0
+          ? `<span class="pill done mono">↓ ${pct}%</span>`
+          : `<span class="pill warn mono">larger · kept</span>`;
+    }
     row.dl.hidden = false;
   }
 }
@@ -444,6 +482,7 @@ async function encodeItem(it: Item): Promise<void> {
     fillColor,
     targetWidth: t?.tw,
     targetHeight: t?.th,
+    targetBytes: targeting() ? Math.max(1, Math.round(Number(targetKb.value) || 0)) * 1024 : undefined,
   };
   const res = await pool.submit(req, () => {
     if (it.jobId === my) {
@@ -462,9 +501,17 @@ async function encodeItem(it: Item): Promise<void> {
     it.encoded = new Blob([res.bytes], { type: mimeFor[format] });
     it.encodedUrl = URL.createObjectURL(it.encoded);
     it.encodedSize = res.size;
+    it.encQuality = res.quality;
+    it.reached = res.reachedTarget;
     it.hasAlpha = res.hasAlpha;
     it.status = 'done';
     it.outName = `${baseName(it.name)}.${extFor[format]}`;
+    // In target-size mode, reflect the quality the search landed on back into the slider,
+    // so switching to Quality mode continues from there (detail view only — batch is ambiguous).
+    if (targeting() && isActive(it)) {
+      qEl.value = String(res.quality);
+      qVal.textContent = String(res.quality);
+    }
   }
   updateRow(it);
   if (isActive(it)) renderDetail(it);
@@ -650,6 +697,18 @@ fmts.addEventListener('click', (e) => {
 });
 qEl.addEventListener('input', () => {
   qVal.textContent = qEl.value;
+  scheduleReencode();
+});
+qMode.addEventListener('click', (e) => {
+  const btn = (e.target as HTMLElement).closest<HTMLButtonElement>('.chip');
+  if (!btn || !btn.dataset.qmode) return;
+  qmode = btn.dataset.qmode as 'quality' | 'target';
+  updateQualityModeUI();
+  render();
+  reencodeAll();
+});
+targetKb.addEventListener('input', () => {
+  syncTargetUI();
   scheduleReencode();
 });
 rzP.addEventListener('input', () => {

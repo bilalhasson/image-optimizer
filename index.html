@@ -110,9 +110,20 @@
               <p class="fmt-note" id="fmt-note" hidden></p>
             </div>
             <div class="sec" id="quality-sec">
-              <div class="slider-row"><h3>Quality</h3><span class="val mono" id="qval">75</span></div>
-              <input type="range" id="quality" min="1" max="100" value="75" aria-label="Quality" />
-              <div class="scale-lab"><span>smaller file</span><span>higher fidelity</span></div>
+              <div class="chips" id="q-mode">
+                <button class="chip" type="button" data-qmode="quality" aria-pressed="true">Quality</button>
+                <button class="chip" type="button" data-qmode="target" aria-pressed="false">Target size</button>
+              </div>
+              <div id="quality-block">
+                <div class="slider-row"><span class="lbl">Quality</span><span class="val mono" id="qval">75</span></div>
+                <input type="range" id="quality" min="1" max="100" value="75" aria-label="Quality" />
+                <div class="scale-lab"><span>smaller file</span><span>higher fidelity</span></div>
+              </div>
+              <div id="target-block" hidden>
+                <div class="slider-row"><span class="lbl">Max file size</span><span class="val mono" id="target-val">200 KB</span></div>
+                <input type="range" id="target-kb" min="5" max="1000" step="1" value="200" aria-label="Target file size" />
+                <p class="fmt-note" id="target-note">We’ll find the highest quality that fits.</p>
+              </div>
             </div>
             <div class="sec" id="resize-sec">
               <details class="acc" id="resize-acc">
