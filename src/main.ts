@@ -25,6 +25,7 @@ const fileInput = $<HTMLInputElement>('file');
 const drop = $('drop');
 const errorBox = $('error');
 const errorMsg = $('error-msg');
+const toastEl = $('toast');
 
 // app shell
 const app = $('app');
@@ -104,6 +105,7 @@ interface Item {
   reached?: boolean; // target-size mode: did we fit under the budget?
   outName?: string;
   error?: string;
+  stageLabel?: string; // transient processing label, e.g. "Converting HEIC…"
   jobId: number;
   row?: RowRefs;
 }
@@ -131,6 +133,13 @@ function fmtBytes(bytes: number): string {
   return `${bytes} B`;
 }
 const baseName = (name: string) => name.replace(/\.[^.]+$/, '');
+let toastTimer: number | undefined;
+function toast(message: string): void {
+  toastEl.textContent = message;
+  toastEl.hidden = false;
+  window.clearTimeout(toastTimer);
+  toastTimer = window.setTimeout(() => (toastEl.hidden = true), 3800);
+}
 const revoke = (u: string | undefined | null) => {
   if (u) URL.revokeObjectURL(u);
 };
@@ -273,8 +282,13 @@ function renderDetail(it: Item): void {
   vName.textContent = it.name;
   vDims.textContent = `${it.origW || '?'} × ${it.origH || '?'} · ${fmtBytes(it.origSize)}`;
   if (it.origW && it.origH) cmp.style.setProperty('--ar', `${it.origW} / ${it.origH}`);
-  imgBefore.src = it.originalUrl;
-  imgAfter.src = it.encodedUrl ?? it.originalUrl;
+  if (it.originalUrl) {
+    imgBefore.src = it.originalUrl;
+    imgAfter.src = it.encodedUrl ?? it.originalUrl;
+  } else {
+    imgBefore.removeAttribute('src');
+    imgAfter.removeAttribute('src');
+  }
   rFrom.textContent = fmtBytes(it.origSize);
 
   appError.hidden = it.status !== 'error';
@@ -284,7 +298,7 @@ function renderDetail(it: Item): void {
   bar.hidden = !busy;
   if (busy) {
     rSav.className = 'savings muted';
-    rSav.textContent = `Encoding ${format.toUpperCase()}…`;
+    rSav.textContent = it.stageLabel || `Encoding ${format.toUpperCase()}…`;
     rTo.textContent = '…';
     dl.disabled = true;
   } else if (it.status === 'done' && it.encodedSize != null) {
@@ -382,7 +396,8 @@ function createRow(it: Item): void {
 function updateRow(it: Item): void {
   const row = it.row;
   if (!row) return;
-  row.thumb.src = it.originalUrl;
+  if (it.originalUrl) row.thumb.src = it.originalUrl;
+  else row.thumb.removeAttribute('src');
   row.fn.textContent = it.name;
   row.fmeta.classList.toggle('err', it.status === 'error');
   if (it.status === 'error') {
@@ -394,7 +409,7 @@ function updateRow(it: Item): void {
     row.status.innerHTML = '<span class="pill queued mono">Queued</span>';
     row.dl.hidden = true;
   } else if (it.status === 'processing') {
-    row.fmeta.textContent = 'Encoding…';
+    row.fmeta.textContent = it.stageLabel || 'Encoding…';
     row.status.innerHTML = '<span class="rowprog"><span class="track"><span></span></span></span>';
     row.dl.hidden = true;
   } else {
@@ -428,6 +443,21 @@ async function loadDims(it: Item): Promise<void> {
 }
 
 const MAX_MEGAPIXELS = 256; // hard guard against browser-crashing inputs
+
+const HEIC_BRANDS = ['heic', 'heix', 'hevc', 'heim', 'heis', 'hevm', 'hevs', 'mif1', 'msf1', 'heif'];
+/** Cheap ISOBMFF ftyp-brand sniff for HEIC/HEIF (browsers can't decode these natively). */
+async function isHeicFile(file: File): Promise<boolean> {
+  if (/\.(heic|heif)$/i.test(file.name)) return true;
+  if (/^image\/(heic|heif)/i.test(file.type)) return true;
+  try {
+    const b = new Uint8Array(await file.slice(0, 16).arrayBuffer());
+    const ftyp = String.fromCharCode(b[4], b[5], b[6], b[7]);
+    const brand = String.fromCharCode(b[8], b[9], b[10], b[11]);
+    return ftyp === 'ftyp' && HEIC_BRANDS.includes(brand);
+  } catch {
+    return false;
+  }
+}
 
 /** Cheap header sniff for animated GIF / WebP / APNG. */
 async function isAnimated(file: File): Promise<boolean> {
@@ -528,7 +558,12 @@ function scheduleReencode(): void {
 }
 
 /* ---------- add / navigate / download ---------- */
+/** Reject at the landing drop zone if it's visible; otherwise (app open) show a toast. */
 function rejectDrop(message: string): void {
+  if (items.length > 0) {
+    toast(message);
+    return;
+  }
   drop.classList.add('err');
   errorMsg.textContent = message;
   errorBox.hidden = false;
@@ -536,33 +571,50 @@ function rejectDrop(message: string): void {
 
 /** Screen incoming files (non-image types, animated) at the drop zone before admitting them. */
 async function intake(files: FileList | File[]): Promise<void> {
-  const images = Array.from(files).filter((f) => f.type.startsWith('image/'));
-  if (!images.length) {
-    rejectDrop(`That isn’t an image we can read. Try JPEG, PNG, WebP, AVIF or GIF.`);
-    return;
-  }
+  const arr = Array.from(files);
+  const screened = await Promise.all(arr.map(async (f) => ({ f, heic: await isHeicFile(f) })));
+  const usable = screened.filter((s) => s.f.type.startsWith('image/') || s.heic);
+  const unsupported = screened.length - usable.length;
   // Animation can only be detected once we can read bytes (i.e. now, on drop/pick — never on hover).
-  const animatedFlags = await Promise.all(images.map(isAnimated));
-  const accepted = images.filter((_, i) => !animatedFlags[i]);
+  const animatedFlags = await Promise.all(usable.map((s) => isAnimated(s.f)));
+  const accepted = usable.filter((_, i) => !animatedFlags[i]);
+  const animatedCount = usable.length - accepted.length;
+
   if (!accepted.length) {
-    rejectDrop('Animated images aren’t supported yet.');
+    rejectDrop(
+      animatedCount && !unsupported
+        ? 'Animated images aren’t supported yet.'
+        : `That isn’t an image we can read. Try JPEG, PNG, WebP, AVIF, GIF or HEIC.`,
+    );
     return;
   }
   drop.classList.remove('err');
   errorBox.hidden = true;
+  const skipped = unsupported + animatedCount;
+  if (skipped) toast(`${skipped} file${skipped > 1 ? 's' : ''} skipped — unsupported or animated.`);
   addAccepted(accepted);
 }
 
-function addAccepted(images: File[]): void {
-  for (const file of images) {
+function refreshRefFrom(it: Item): void {
+  if (items[0] === it) {
+    originalW = it.origW;
+    originalH = it.origH;
+    refBytes = it.origSize;
+    syncResizeFields();
+    syncTargetUI();
+  }
+}
+
+function addAccepted(entries: { f: File; heic: boolean }[]): void {
+  for (const { f, heic } of entries) {
     const it: Item = {
       id: ++idSeq,
-      file,
-      name: file.name,
-      originalUrl: URL.createObjectURL(file),
+      file: f,
+      name: f.name,
+      originalUrl: heic ? '' : URL.createObjectURL(f), // HEIC can't be shown until decoded
       origW: 0,
       origH: 0,
-      origSize: file.size,
+      origSize: f.size, // keep the ORIGINAL (HEIC) size for the savings comparison
       status: 'queued',
       hasAlpha: false,
       jobId: 0,
@@ -570,14 +622,26 @@ function addAccepted(images: File[]): void {
     items.push(it);
     createRow(it);
     void (async () => {
+      if (heic) {
+        it.status = 'processing';
+        it.stageLabel = 'Converting HEIC…';
+        updateRow(it);
+        if (isActive(it)) renderDetail(it);
+        try {
+          const { heicTo } = await import('heic-to'); // ~1.5 MB decoder, loaded only for HEIC
+          const png = (await heicTo({ blob: it.file, type: 'image/png' })) as Blob;
+          it.file = new File([png], it.name, { type: 'image/png' });
+          it.originalUrl = URL.createObjectURL(png);
+        } catch {
+          failItem(it, 'Couldn’t decode this HEIC image.');
+          return;
+        }
+        it.stageLabel = undefined;
+      }
       await loadDims(it);
       updateRow(it);
       if (isActive(it)) renderDetail(it);
-      if (items[0] === it) {
-        originalW = it.origW;
-        originalH = it.origH;
-        syncResizeFields();
-      }
+      refreshRefFrom(it);
       if (it.origW && it.origH && it.origW * it.origH > MAX_MEGAPIXELS * 1_000_000) {
         const mp = Math.round((it.origW * it.origH) / 1_000_000);
         failItem(it, `This image is very large (${mp} MP). Resize the original first, then try again.`);
@@ -753,8 +817,11 @@ drop.addEventListener('keydown', (e) => {
   }
 });
 fileInput.addEventListener('change', () => {
-  if (fileInput.files && fileInput.files.length) void intake(fileInput.files);
-  fileInput.value = '';
+  // Snapshot the files, and clear the input only AFTER intake has read them —
+  // clearing mid-read detaches the File objects and makes the async byte sniffs fail.
+  const picked = fileInput.files ? Array.from(fileInput.files) : [];
+  if (picked.length) void intake(picked).finally(() => (fileInput.value = ''));
+  else fileInput.value = '';
 });
 addMore.addEventListener('click', () => fileInput.click());
 backToBatch.addEventListener('click', backToBatchView);

@@ -304,9 +304,29 @@ input[type=range]::-moz-range-thumb { width:20px; height:20px; border:3px solid 
 
 footer { padding-block:var(--s6) var(--s7); color:var(--ink-faint); font-size:var(--t-13); text-align:center; }
 
+/* toast — visible in both landing and app views */
+.toast { position:fixed; left:50%; bottom:24px; transform:translateX(-50%); z-index:50;
+  max-width:calc(100vw - 32px); background:var(--ink); color:var(--paper);
+  font-size:var(--t-14); padding:12px 18px; border-radius:var(--r-pill); box-shadow:var(--shadow-2);
+  animation:toast-in var(--dur-base) var(--ease); }
+@keyframes toast-in { from { opacity:0; transform:translate(-50%, 8px); } to { opacity:1; transform:translate(-50%, 0); } }
+
+@media (max-width:860px) {
+  .compare { max-height:58vh; }
+}
 @media (max-width:600px) {
   .hero { padding-block:var(--s7) var(--s5); }
   .drop { padding:var(--s6) var(--s5); }
+}
+/* touch devices: comfortable tap targets (≥44px) */
+@media (pointer: coarse) {
+  .chip { padding:11px 16px; }
+  .btn-ghost { padding:11px 16px; }
+  .rowbtn { width:44px; height:44px; }
+  .swatch { width:32px; height:32px; }
+  .compare .handle { width:48px; height:48px; margin:-24px 0 0 -24px; }
+  input[type=range]::-webkit-slider-thumb { width:26px; height:26px; }
+  input[type=range]::-moz-range-thumb { width:26px; height:26px; }
 }
 @media (prefers-reduced-motion: reduce) {
   * { animation:none !important; transition:none !important; }

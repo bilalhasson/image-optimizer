@@ -55,7 +55,7 @@
           <span class="big">Drop an image here</span>
           <span class="sub">or</span>
           <button class="btn-pick" type="button" id="pick">Browse files</button>
-          <span class="fmt-note">Accepts <span class="mono">JPEG · PNG · WebP · AVIF · GIF</span></span>
+          <span class="fmt-note">Accepts <span class="mono">JPEG · PNG · WebP · AVIF · GIF · HEIC</span></span>
         </div>
 
         <div class="privacy"><span class="dot" aria-hidden="true"></span> Images never leave your device — every pixel is processed locally.</div>
@@ -194,7 +194,8 @@
 
     <footer class="wrap">squish · compress, convert &amp; resize — 100% in your browser.</footer>
 
-    <input type="file" id="file" accept="image/*" hidden multiple />
+    <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+    <input type="file" id="file" accept="image/*,.heic,.heif" hidden multiple />
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
